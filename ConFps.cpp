@@ -9,8 +9,8 @@
 using namespace std;
 
 // Global variables
-int ScreenWidth = 120;
-int ScreenHeight = 40;
+int ScreenWidth = 280;
+int ScreenHeight = 70;
 float fPlayerX = 8.0f;
 float fPlayerY = 8.0f;
 float fPlayerA = 0.0f; // angle player is looking at
@@ -18,6 +18,25 @@ int MapHeight = 16;
 int MapWidth = 16;
 float fov = 3.14159f / 4.0f;
 float Depth = 16.0f;
+
+wstring map =
+L"################"
+L"#      #       #"
+L"#              #"
+L"#      # #     #"
+L"#      #       #"
+L"#      #       #"
+L"#              #"
+L"#              #"
+L"#              #"
+L"#              #"
+L"#              #"
+L"#              #"
+L"#        #######"
+L"#              #"
+L"#              #"
+L"################";
+
 
 // Player and Weapon Definitions
 Player player = { 8.0f, 8.0f, 0.0f, 100, 10 };
@@ -30,10 +49,10 @@ Weapon weapons[] =
 int currentWeapon = 0; // Currently selected weapon
 
 void RenderWeapon(CHAR_INFO* screenBuffer) {
-    int weaponY = ScreenHeight - 6;
-    int weaponX = ScreenWidth / 2 - 10;  // Center the weapon on-screen
+    int weaponY = ScreenHeight - 12; // Adjust for the scaled-up height
+    int weaponX = ScreenWidth / 2 - 20; // Adjust for the scaled-up width
 
-    // Choose the updated, detailed sprites
+    // Scaled-up Pistol Sprite
     const wchar_t* pistolSprite[6] = {
         L"        |||||      ",
         L"       ||   ||     ",
@@ -43,6 +62,7 @@ void RenderWeapon(CHAR_INFO* screenBuffer) {
         L"  \\___________/   "
     };
 
+    // Scaled-up Shotgun Sprite
     const wchar_t* shotgunSprite[6] = {
         L"   ______________  ",
         L"  |  ||=======||  |",
@@ -54,22 +74,76 @@ void RenderWeapon(CHAR_INFO* screenBuffer) {
 
     // Select weapon sprite
     const wchar_t** weaponSprite = (currentWeapon == 0) ? pistolSprite : shotgunSprite;
-    WORD weaponColor = (currentWeapon == 0) ? FG_LIGHTGRAY : FG_DARKGRAY; // Different colors per weapon
+    WORD weaponColor = (currentWeapon == 0) ? FG_LIGHTGRAY : FG_DARKGRAY; // Different colors for each weapon
 
-    // Render weapon sprite with transparency
+    // Scale up the sprite by 2x (duplicate rows and columns)
     for (int y = 0; y < 6; y++) {
-        int lineLength = (int)wcslen(weaponSprite[y]);
-        for (int x = 0; x < lineLength; x++) {
-            int idx = (weaponY + y) * ScreenWidth + (weaponX + x);
-            if (idx < ScreenWidth * ScreenHeight) { // Ensure within buffer bounds
-                wchar_t charToRender = weaponSprite[y][x];
-                if (charToRender != ' ') {  // Keep transparency
-                    screenBuffer[idx].Char.UnicodeChar = charToRender;
-                    screenBuffer[idx].Attributes = weaponColor;
+        for (int scaleY = 0; scaleY < 2; scaleY++) { // Duplicate rows
+            for (int x = 0; x < (int)wcslen(weaponSprite[y]); x++) {
+                for (int scaleX = 0; scaleX < 2; scaleX++) { // Duplicate columns
+                    int idx = (weaponY + y * 2 + scaleY) * ScreenWidth + (weaponX + x * 2 + scaleX);
+                    if (idx < ScreenWidth * ScreenHeight) { // Ensure within buffer bounds
+                        wchar_t charToRender = weaponSprite[y][x];
+                        if (charToRender != ' ') { // Keep transparency
+                            screenBuffer[idx].Char.UnicodeChar = charToRender;
+                            screenBuffer[idx].Attributes = weaponColor;
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+
+void SetConsoleSize() {
+    HANDLE Console = GetStdHandle(STD_OUTPUT_HANDLE);
+
+    // Set the console screen buffer size
+    COORD bufferSize = { (SHORT)ScreenWidth, (SHORT)ScreenHeight };
+    if (!SetConsoleScreenBufferSize(Console, bufferSize)) {
+        wcout << L"Error: Unable to set console buffer size!" << endl;
+        return;
+    }
+
+    // Set the console window size to match the buffer
+    SMALL_RECT windowSize = { 0, 0, (SHORT)(ScreenWidth - 1), (SHORT)(ScreenHeight - 1) };
+    if (!SetConsoleWindowInfo(Console, TRUE, &windowSize)) {
+        wcout << L"Error: Unable to set console window size!" << endl;
+        return;
+    }
+
+    // Set the console font size for proper scaling with the larger window
+    CONSOLE_FONT_INFOEX cfi = { sizeof(CONSOLE_FONT_INFOEX) };
+    cfi.dwFontSize.X = 10;  // Width of each character in pixels
+    cfi.dwFontSize.Y = 18;  // Height of each character in pixels
+    cfi.FontFamily = FF_DONTCARE;
+    cfi.FontWeight = FW_NORMAL;
+    wcscpy_s(cfi.FaceName, L"Consolas"); // Use a fixed-width font
+    SetCurrentConsoleFontEx(Console, FALSE, &cfi);
+
+    // Center the console window on the screen
+    HWND hwndConsole = GetConsoleWindow();
+    if (hwndConsole) {
+        RECT rect;
+        GetWindowRect(hwndConsole, &rect);
+
+        int consoleWidth = rect.right - rect.left;
+        int consoleHeight = rect.bottom - rect.top;
+
+        int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+        int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+
+        int posX = (screenWidth - consoleWidth) / 2;
+        int posY = (screenHeight - consoleHeight) / 2;
+
+        MoveWindow(hwndConsole, posX, posY, consoleWidth, consoleHeight, TRUE);
+    }
+
+    // Disable resizing and maximizing
+    LONG style = GetWindowLong(hwndConsole, GWL_STYLE);
+    style &= ~(WS_MAXIMIZEBOX | WS_SIZEBOX);
+    SetWindowLong(hwndConsole, GWL_STYLE, style);
 }
 
 
@@ -96,37 +170,79 @@ void RenderHUD(CHAR_INFO* screenBuffer, float fps) {
     }
 }
 
-
 void SetFixedConsoleSize() {
     HANDLE Console = GetStdHandle(STD_OUTPUT_HANDLE);
 
-    // Set the screen buffer size to match the window size
+    // Set the screen buffer size to match the desired window size
     COORD bufferSize = { (SHORT)ScreenWidth, (SHORT)ScreenHeight };
-    SetConsoleScreenBufferSize(Console, bufferSize);
+    if (!SetConsoleScreenBufferSize(Console, bufferSize)) {
+        wcout << L"Error: Unable to set console buffer size. Check permissions!" << endl;
+        return;
+    }
 
     // Set the window size to match the buffer size
     SMALL_RECT windowSize = { 0, 0, (SHORT)(ScreenWidth - 1), (SHORT)(ScreenHeight - 1) };
-    SetConsoleWindowInfo(Console, TRUE, &windowSize);
+    if (!SetConsoleWindowInfo(Console, TRUE, &windowSize)) {
+        wcout << L"Error: Unable to set console window size. Check permissions!" << endl;
+        return;
+    }
 
     // Disable resizing, maximize, and minimize buttons
     HWND hwndConsole = GetConsoleWindow();
-    LONG style = GetWindowLong(hwndConsole, GWL_STYLE);
-    style &= ~(WS_MAXIMIZEBOX | WS_SIZEBOX); // Disable maximize and resizing
-    SetWindowLong(hwndConsole, GWL_STYLE, style);
+    if (hwndConsole) {
+        LONG style = GetWindowLong(hwndConsole, GWL_STYLE);
+        style &= ~(WS_MAXIMIZEBOX | WS_SIZEBOX); // Disable maximize and resizing
+        SetWindowLong(hwndConsole, GWL_STYLE, style);
+    }
 
     // Center the console window on the screen
-    RECT rect;
-    GetWindowRect(hwndConsole, &rect);
-    int consoleWidth = rect.right - rect.left;
-    int consoleHeight = rect.bottom - rect.top;
+    HWND hwnd = GetConsoleWindow();
+    if (hwnd) {
+        RECT rect;
+        GetWindowRect(hwnd, &rect);
 
-    int screenWidth = GetSystemMetrics(SM_CXSCREEN);
-    int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+        int consoleWidth = rect.right - rect.left;
+        int consoleHeight = rect.bottom - rect.top;
 
-    int posX = (screenWidth - consoleWidth) / 2;
-    int posY = (screenHeight - consoleHeight) / 2;
+        int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+        int screenHeight = GetSystemMetrics(SM_CYSCREEN);
 
-    MoveWindow(hwndConsole, posX, posY, consoleWidth, consoleHeight, TRUE);
+        int posX = (screenWidth - consoleWidth) / 2;
+        int posY = (screenHeight - consoleHeight) / 2;
+
+        MoveWindow(hwnd, posX, posY, consoleWidth, consoleHeight, TRUE);
+    }
+}
+
+
+void RenderMiniMap(CHAR_INFO* screenBuffer) {
+    int mapOffsetX = 1;  // Padding from left
+    int mapOffsetY = 1;  // Padding from top
+
+    for (int ny = 0; ny < MapHeight; ny++) {
+        for (int nx = 0; nx < MapWidth; nx++) {
+            int screenIdx = (mapOffsetY + ny) * ScreenWidth + (mapOffsetX + nx);
+            int mapIdx = ny * MapWidth + nx;  // Ensure map index is within bounds
+
+            if (mapIdx < 0 || mapIdx >= map.size()) continue;  // Prevent out-of-bounds errors
+
+            if ((int)fPlayerY == ny && (int)fPlayerX == nx) {
+                // Display the player as 'P'
+                screenBuffer[screenIdx].Char.UnicodeChar = L'P';
+                screenBuffer[screenIdx].Attributes = FG_YELLOW;
+            }
+            else if (map[mapIdx] == L'#') {  // Compare as a wide character (L'#')
+                // Display walls
+                screenBuffer[screenIdx].Char.UnicodeChar = L'#';
+                screenBuffer[screenIdx].Attributes = FG_RED;
+            }
+            else {
+                // Open space
+                screenBuffer[screenIdx].Char.UnicodeChar = L'.';
+                screenBuffer[screenIdx].Attributes = FG_GREEN;
+            }
+        }
+    }
 }
 
 
@@ -134,6 +250,7 @@ void SetFixedConsoleSize() {
 int main() {
     // Create the screen buffer
     SetFixedConsoleSize();
+    SetConsoleSize();
     CHAR_INFO* screenBuffer = new CHAR_INFO[ScreenWidth * ScreenHeight];
     HANDLE Console = GetStdHandle(STD_OUTPUT_HANDLE);
     // Set up the buffer size and write region
@@ -141,26 +258,6 @@ int main() {
     COORD bufferCoord = { 0, 0 };
     SMALL_RECT writeRegion = { 0, 0, (SHORT)(ScreenWidth - 1), (SHORT)(ScreenHeight - 1) };
 
-
-
-    // Build the map string (16x16 map)
-    wstring map;
-    map += L"################";
-    map += L"#      #       #";
-    map += L"#              #";
-    map += L"#      # #     #";
-    map += L"#      #       #";
-    map += L"#      #       #";
-    map += L"#              #";
-    map += L"#              #";
-    map += L"#              #";
-    map += L"#              #";
-    map += L"#              #";
-    map += L"#              #";
-    map += L"#        #######";
-    map += L"#              #";
-    map += L"#              #";
-    map += L"################";
 
     auto tp1 = chrono::system_clock::now();
     auto tp2 = chrono::system_clock::now();
@@ -305,7 +402,8 @@ int main() {
             }
         }
 
-
+        // Inside the game loop
+        RenderMiniMap(screenBuffer);
           
         // Render the weapon
         RenderWeapon(screenBuffer);
